@@ -1,0 +1,43 @@
+USE HotelManagement;
+GO
+
+DECLARE @ServiceItemList ServiceItemListType;
+DECLARE @NewPackageID INT;
+
+INSERT INTO @ServiceItemList (ServiceItemID, Quantity)
+VALUES (1, 2), (2, 1);
+
+EXEC usp_createPackage
+    @PackageName = 'Summer Special',
+    @ServiceItemList = @ServiceItemList,
+    @Description = 'Summer vacation package',
+    @ValidStartDate = '2025-12-01',
+    @ValidEndDate = '2025-12-31',
+    @AdvertisedPrice = 499.99,
+    @AdvertisedCurrency = 'AUD',
+    @EmployeeID = 1,
+    @AdvertisedPackageID = @NewPackageID OUTPUT;
+GO
+
+DECLARE @ServiceItemList2 ServiceItemListType;
+DECLARE @NewPackageID2 INT;
+
+INSERT INTO @ServiceItemList2 (ServiceItemID, Quantity)
+VALUES (1, 2), (999, 1);
+
+BEGIN TRY
+    EXEC usp_createPackage
+        @PackageName = 'Invalid Package',
+        @ServiceItemList = @ServiceItemList2,
+        @Description = 'This should fail',
+        @ValidStartDate = '2025-12-01',
+        @ValidEndDate = '2025-12-31',
+        @AdvertisedPrice = 499.99,
+        @AdvertisedCurrency = 'AUD',
+        @EmployeeID = 1,
+        @AdvertisedPackageID = @NewPackageID2 OUTPUT;
+END TRY
+BEGIN CATCH
+    PRINT ERROR_MESSAGE();
+END CATCH
+GO
