@@ -1,0 +1,98 @@
+USE HotelManagement;
+GO
+
+-- Check and drop the existing type if it exists
+IF EXISTS (SELECT * FROM sys.types WHERE name = 'ServiceItemListType' AND is_table_type = 1)
+BEGIN
+    DROP TYPE ServiceItemListType;
+END
+GO
+
+-- Create the type
+CREATE TYPE ServiceItemListType AS TABLE (
+    ServiceItemID INT,
+    Quantity INT
+);
+GO
+
+-- Create or alter the stored procedure
+CREATE OR ALTER PROCEDURE usp_createPackage
+    @PackageName VARCHAR(255),
+    @ServiceItemList ServiceItemListType READONLY,
+    @Description TEXT,
+    @ValidStartDate DATE,
+    @ValidEndDate DATE,
+    @AdvertisedPrice DECIMAL(10,2),
+    @AdvertisedCurrency VARCHAR(10),
+    @EmployeeID INT,
+    @AdvertisedPackageID INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        
+        -- Validate package name
+        IF @PackageName IS NULL OR LTRIM(RTRIM(@PackageName)) = ''
+        BEGIN
+            RAISERROR('Package name cannot be empty', 16, 1);
+        END
+        
+        -- Validate date range
+        IF @ValidStartDate IS NULL OR @ValidEndDate IS NULL OR @ValidStartDate > @ValidEndDate
+        BEGIN
+            RAISERROR('Invalid date range - start date must be before end date', 16, 1);
+        END
+        
+        -- Validate advertised price
+        IF @AdvertisedPrice <= 0
+        BEGIN
+            RAISERROR('Advertised price must be positive', 16, 1);
+        END
+        
+        -- Validate employee ID
+        IF NOT EXISTS (SELECT 1 FROM Employee WHERE EmployeeID = @EmployeeID)
+        BEGIN
+            RAISERROR('Invalid employee ID', 16, 1);
+        END
+        
+        -- Validate service items
+        DECLARE @InvalidServiceItemCount INT;
+        SELECT @InvalidServiceItemCount = COUNT(*)
+        FROM @ServiceItemList sil
+        LEFT JOIN ServiceItem si ON sil.ServiceItemID = si.ServiceItemID
+        WHERE si.ServiceItemID IS NULL;
+        
+        IF @InvalidServiceItemCount > 0
+        BEGIN
+            RAISERROR('One or more service items do not exist', 16, 1);
+        END
+        
+        -- Insert into Package table
+        DECLARE @NewPackageID INT;
+        INSERT INTO Package (Description, Status, EmployeeID)
+        VALUES (@Description, 'active', @EmployeeID);
+        
+        SET @NewPackageID = SCOPE_IDENTITY();
+        
+        -- Insert into Advertisement table
+        INSERT INTO Advertisement (PackageID, AdvertisedPrice, AdvertiseCurrency, StartDate, EndDate, GracePeriod)
+        VALUES (@NewPackageID, @AdvertisedPrice, @AdvertisedCurrency, @ValidStartDate, @ValidEndDate, 7);
+        
+        SET @AdvertisedPackageID = @NewPackageID;
+        
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+            
+        DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
+        DECLARE @ErrorSeverity INT = ERROR_SEVERITY();
+        DECLARE @ErrorState INT = ERROR_STATE();
+        
+        RAISERROR(@ErrorMessage, @ErrorSeverity, @ErrorState);
+    END CATCH
+END;
+GO
